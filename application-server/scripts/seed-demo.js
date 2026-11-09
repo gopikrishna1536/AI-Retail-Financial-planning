@@ -279,20 +279,20 @@ async function seedDemoData() {
           organization_id: orgId,
           alert_type: 'BUDGET_OVERRUN',
           severity: 'HIGH',
-          title: 'Logistics Cost Variance Spike in East Region',
+          risk_score: 85.50,
           description: 'Logistics and freight distribution exceeded allocated budget threshold by 5.0% in Q3.',
-          status: 'ACTIVE',
-          impact_amount: 1100000.00
+          recommended_action: 'Reallocate surplus from Omnichannel IT budget and review freight contracts.',
+          status: 'ACTIVE'
         },
         {
           id: uuidv4(),
           organization_id: orgId,
           alert_type: 'MARGIN_COMPRESSION',
           severity: 'MEDIUM',
-          title: 'Electronics Category Gross Margin Contraction',
+          risk_score: 62.00,
           description: 'Promotional discount elevation in smartphones contracted category margin to 22.4%.',
-          status: 'ACTIVE',
-          impact_amount: 450000.00
+          recommended_action: 'Cap seasonal promotion discount at 8% and bundle with high-margin accessories.',
+          status: 'ACTIVE'
         }
       ]);
       logger.info('Inserted demo risk alerts.');
