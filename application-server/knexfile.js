@@ -1,7 +1,8 @@
 const path = require('path');
 require('dotenv').config();
 
-const isPgRequested = process.env.DATABASE_CLIENT === 'pg';
+const isPgRequested = process.env.DATABASE_CLIENT === 'pg' || 
+  (process.env.DATABASE_URL && (process.env.DATABASE_URL.startsWith('postgres://') || process.env.DATABASE_URL.startsWith('postgresql://')));
 
 module.exports = {
   development: {
@@ -40,19 +41,22 @@ module.exports = {
   },
 
   production: {
-    client: 'pg',
+    client: isPgRequested ? 'pg' : (process.env.DATABASE_CLIENT || 'sqlite3'),
     connection: process.env.DATABASE_URL ? {
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
-    } : {
+    } : (isPgRequested ? {
       host: process.env.DB_HOST,
       port: process.env.DB_PORT || 5432,
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,
       ssl: { rejectUnauthorized: false }
-    },
-    pool: { min: 2, max: 20 },
+    } : {
+      filename: path.join(__dirname, 'database', 'dev_retail_planning.sqlite')
+    }),
+    useNullAsDefault: true,
+    pool: isPgRequested ? { min: 2, max: 20 } : undefined,
     migrations: {
       directory: path.join(__dirname, 'database', 'migrations')
     },

@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "node src/app.js",
+    "build": "node -e \"console.log('Application server ready')\"",
     "migrate": "knex migrate:latest",
     "seed": "node scripts/seed-demo.js",
     "import-data": "node scripts/import-dataset.js",

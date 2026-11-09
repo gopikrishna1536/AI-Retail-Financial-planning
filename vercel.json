@@ -1,0 +1,27 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "application-server": {
+      "root": "application-server",
+      "framework": "express",
+      "entrypoint": "src/app.js"
+    },
+    "frontend": {
+      "root": "frontend"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": { "service": "application-server" }
+    },
+    {
+      "source": "/health",
+      "destination": { "service": "application-server" }
+    },
+    {
+      "source": "/(.*)",
+      "destination": { "service": "frontend" }
+    }
+  ]
+}

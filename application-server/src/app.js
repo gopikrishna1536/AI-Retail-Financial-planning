@@ -36,7 +36,12 @@ const allowedOrigins = [
 app.use(cors({
   origin: (origin, callback) => {
     // Allow non-browser requests or allowed origins
-    if (!origin || allowedOrigins.includes(origin) || env.nodeEnv === 'development') {
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      env.nodeEnv === 'development' ||
+      origin.endsWith('.vercel.app')
+    ) {
       callback(null, true);
     } else {
       callback(new Error('CORS policy violation: Origin not allowed'));
