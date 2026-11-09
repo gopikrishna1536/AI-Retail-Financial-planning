@@ -1,0 +1,258 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "AWS Infrastructure for AI Retail Financial Planning & Budget Optimization Platform",
+  "Parameters": {
+    "DBPassword": {
+      "Type": "String",
+      "NoEcho": true,
+      "Description": "Database admin password for PostgreSQL RDS",
+      "MinLength": 8,
+      "MaxLength": 41,
+      "AllowedPattern": "[a-zA-Z0-9]+"
+    },
+    "InstanceType": {
+      "Type": "String",
+      "Default": "t3.small",
+      "AllowedValues": ["t3.micro", "t3.small", "t3.medium", "t3.large"],
+      "Description": "EC2 instance type for Application Server"
+    },
+    "DBInstanceClass": {
+      "Type": "String",
+      "Default": "db.t3.micro",
+      "AllowedValues": ["db.t3.micro", "db.t3.small", "db.t3.medium"],
+      "Description": "RDS PostgreSQL instance class"
+    },
+    "LatestUbuntuAmiId": {
+      "Type": "AWS::SSM::Parameter::Value<AWS::EC2::AMI::Id>",
+      "Default": "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id",
+      "Description": "Latest Ubuntu 22.04 LTS AMI ID"
+    }
+  },
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16",
+        "EnableDnsSupport": true,
+        "EnableDnsHostnames": true,
+        "Tags": [{ "Key": "Name", "Value": "RetailFinancialVPC" }]
+      }
+    },
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [{ "Key": "Name", "Value": "RetailFinancialIGW" }]
+      }
+    },
+    "VPCGatewayAttachment": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "InternetGatewayId": { "Ref": "InternetGateway" }
+      }
+    },
+    "PublicSubnetA": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "CidrBlock": "10.0.1.0/24",
+        "AvailabilityZone": { "Fn::Select": [0, { "Fn::GetAZs": "" }] },
+        "MapPublicIpOnLaunch": true,
+        "Tags": [{ "Key": "Name", "Value": "RetailFinancialSubnetA" }]
+      }
+    },
+    "PublicSubnetB": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "CidrBlock": "10.0.2.0/24",
+        "AvailabilityZone": { "Fn::Select": [1, { "Fn::GetAZs": "" }] },
+        "MapPublicIpOnLaunch": true,
+        "Tags": [{ "Key": "Name", "Value": "RetailFinancialSubnetB" }]
+      }
+    },
+    "RouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "Tags": [{ "Key": "Name", "Value": "RetailFinancialPublicRouteTable" }]
+      }
+    },
+    "PublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": "VPCGatewayAttachment",
+      "Properties": {
+        "RouteTableId": { "Ref": "RouteTable" },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": { "Ref": "InternetGateway" }
+      }
+    },
+    "SubnetRouteTableAssociationA": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": { "Ref": "PublicSubnetA" },
+        "RouteTableId": { "Ref": "RouteTable" }
+      }
+    },
+    "SubnetRouteTableAssociationB": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": { "Ref": "PublicSubnetB" },
+        "RouteTableId": { "Ref": "RouteTable" }
+      }
+    },
+    "WebServerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable HTTP, HTTPS, SSH, and Node API access",
+        "VpcId": { "Ref": "VPC" },
+        "SecurityGroupIngress": [
+          { "IpProtocol": "tcp", "FromPort": 80, "ToPort": 80, "CidrIp": "0.0.0.0/0" },
+          { "IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "CidrIp": "0.0.0.0/0" },
+          { "IpProtocol": "tcp", "FromPort": 22, "ToPort": 22, "CidrIp": "0.0.0.0/0" },
+          { "IpProtocol": "tcp", "FromPort": 5000, "ToPort": 5000, "CidrIp": "0.0.0.0/0" }
+        ],
+        "Tags": [{ "Key": "Name", "Value": "RetailFinancialWebSG" }]
+      }
+    },
+    "DBSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable PostgreSQL access only from Web Security Group",
+        "VpcId": { "Ref": "VPC" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 5432,
+            "ToPort": 5432,
+            "SourceSecurityGroupId": { "Ref": "WebServerSecurityGroup" }
+          }
+        ],
+        "Tags": [{ "Key": "Name", "Value": "RetailFinancialDBSG" }]
+      }
+    },
+    "DBSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "Subnet Group for PostgreSQL RDS",
+        "SubnetIds": [{ "Ref": "PublicSubnetA" }, { "Ref": "PublicSubnetB" }],
+        "Tags": [{ "Key": "Name", "Value": "RetailFinancialDBSubnetGroup" }]
+      }
+    },
+    "PostgreSQLRDS": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "DBInstanceIdentifier": "retail-financial-rds",
+        "AllocatedStorage": 20,
+        "DBInstanceClass": { "Ref": "DBInstanceClass" },
+        "Engine": "postgres",
+        "EngineVersion": "15",
+        "MasterUsername": "postgres",
+        "MasterUserPassword": { "Ref": "DBPassword" },
+        "DBName": "retail_financial_db",
+        "DBSubnetGroupName": { "Ref": "DBSubnetGroup" },
+        "VPCSecurityGroups": [{ "Ref": "DBSecurityGroup" }],
+        "PubliclyAccessible": false,
+        "MultiAZ": false,
+        "StorageType": "gp2",
+        "Tags": [{ "Key": "Name", "Value": "RetailFinancialRDS" }]
+      }
+    },
+    "ArtifactsS3Bucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [{ "Key": "Name", "Value": "RetailFinancialS3Bucket" }]
+      }
+    },
+    "EC2IAMRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": "ec2.amazonaws.com" },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "RetailFinancialS3Policy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": ["s3:*"],
+                  "Resource": [
+                    { "Fn::Sub": "${ArtifactsS3Bucket.Arn}" },
+                    { "Fn::Sub": "${ArtifactsS3Bucket.Arn}/*" }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "EC2InstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Roles": [{ "Ref": "EC2IAMRole" }]
+      }
+    },
+    "EC2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "InstanceType": { "Ref": "InstanceType" },
+        "ImageId": { "Ref": "LatestUbuntuAmiId" },
+        "SubnetId": { "Ref": "PublicSubnetA" },
+        "SecurityGroupIds": [{ "Ref": "WebServerSecurityGroup" }],
+        "IamInstanceProfile": { "Ref": "EC2InstanceProfile" },
+        "Tags": [{ "Key": "Name", "Value": "RetailFinancialAppServer" }],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Sub": "#!/bin/bash\napt-get update -y\napt-get install -y curl git nginx amazon-ssm-agent\nsystemctl enable amazon-ssm-agent\nsystemctl start amazon-ssm-agent\ncurl -fsSL https://deb.nodesource.com/setup_20.x | bash -\napt-get install -y nodejs\nnpm install -g pm2\necho 'Server Initialized' > /tmp/init.log\n"
+          }
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "VPCId": {
+      "Description": "VPC ID",
+      "Value": { "Ref": "VPC" }
+    },
+    "EC2PublicIP": {
+      "Description": "EC2 Application Server Public IP Address",
+      "Value": { "Fn::GetAtt": ["EC2Instance", "PublicIp"] }
+    },
+    "EC2PublicDNS": {
+      "Description": "EC2 Application Server Public DNS Name",
+      "Value": { "Fn::GetAtt": ["EC2Instance", "PublicDnsName"] }
+    },
+    "RDSEndpoint": {
+      "Description": "PostgreSQL RDS Endpoint Address",
+      "Value": { "Fn::GetAtt": ["PostgreSQLRDS", "Endpoint.Address"] }
+    },
+    "RDSPort": {
+      "Description": "PostgreSQL RDS Endpoint Port",
+      "Value": { "Fn::GetAtt": ["PostgreSQLRDS", "Endpoint.Port"] }
+    },
+    "S3BucketName": {
+      "Description": "S3 Bucket Name for Financial Artifacts",
+      "Value": { "Ref": "ArtifactsS3Bucket" }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+None
+  Customer ID Customer Name Last Name  ... Quantity  Discount   Profit
+0  CUST000001        Curtis    Krause  ...        3      0.09   448.24
+1  CUST000002        Jeremy    Foster  ...        5      0.39  3134.34
+2  CUST000003         Ariel    Mccann  ...        6      0.07  8324.21
+3  CUST000004       Colleen   Maynard  ...        4      0.18  1962.66
+4  CUST000005          Gina    Holden  ...        4      0.27  2843.93
+
+[5 rows x 25 columns]
+Shape:(100000, 25)

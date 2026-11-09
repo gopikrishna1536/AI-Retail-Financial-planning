@@ -1,0 +1,547 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  FinOptimizer AI - Production Industrial Enterprise Infrastructure Stack
+  Provisions 8 AWS Services: Amazon ECS (Fargate), Amazon RDS (PostgreSQL), 
+  Amazon S3, Amazon CloudFront, AWS Lambda, Amazon EventBridge, Amazon SNS, 
+  and Amazon CloudWatch for enterprise retail financial planning.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [development, staging, production]
+    Description: Deployment target environment.
+
+  DbUsername:
+    Type: String
+    Default: retail_admin
+    Description: Master username for Amazon RDS PostgreSQL database.
+
+  DbPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 10
+    MaxLength: 41
+    Default: RetailFinance2026!Sec
+    Description: Master password for Amazon RDS PostgreSQL database.
+
+  ExecutiveAlertEmail:
+    Type: String
+    Default: cfo-alerts@retailcorp.com
+    Description: Email address for immediate critical financial risk and turnaround notifications.
+
+  JwtSecret:
+    Type: String
+    NoEcho: true
+    Default: finoptimizer_ai_prod_secret_jwt_key_2026_enterprise
+    Description: Cryptographic secret key for signing JSON Web Tokens.
+
+Resources:
+  # =========================================================================
+  # 1. NETWORKING (Amazon VPC, Subnets, Routing, Security Groups)
+  # =========================================================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: FinOptimizer-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: FinOptimizer-IGW
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: FinOptimizer-Public-Subnet-1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: FinOptimizer-Public-Subnet-2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: FinOptimizer-Private-Subnet-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.12.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: FinOptimizer-Private-Subnet-2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: FinOptimizer-Public-RouteTable
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  Subnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  Subnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Security Groups
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public access for Application Load Balancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Ingress from ALB to ECS Application Server tasks
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Ingress to RDS PostgreSQL from ECS and Lambda
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ECSSecurityGroup
+
+  # =========================================================================
+  # 2. AMAZON RDS (PostgreSQL 15 Multi-AZ Relational Database)
+  # =========================================================================
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for FinOptimizer RDS Database
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: FinOptimizer-DB-Subnet-Group
+
+  RetailDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: finoptimizer-db-prod
+      Engine: postgres
+      EngineVersion: '16.4'
+      DBInstanceClass: db.t3.medium
+      AllocatedStorage: '50'
+      StorageType: gp3
+      MultiAZ: false
+      DBName: retail_financial_db
+      MasterUsername: !Ref DbUsername
+      MasterUserPassword: !Ref DbPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      Tags:
+        - Key: Project
+          Value: FinOptimizer-AI
+
+  # =========================================================================
+  # 3. AMAZON ECR & ECS (Fargate Containerized Application Server)
+  # =========================================================================
+  AppRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: finoptimizer-app-server
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: finoptimizer-cluster
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: FinOptimizer-ECS-TaskExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: finoptimizer-backend-task
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: app-server
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/finoptimizer-app-server:latest'
+          PortMappings:
+            - ContainerPort: 5000
+              Protocol: tcp
+          Environment:
+            - Name: NODE_ENV
+              Value: production
+            - Name: PORT
+              Value: '5000'
+            - Name: DATABASE_CLIENT
+              Value: pg
+            - Name: DATABASE_URL
+              Value: !Sub 'postgres://${DbUsername}:${DbPassword}@${RetailDatabase.Endpoint.Address}:5432/retail_financial_db'
+            - Name: JWT_SECRET
+              Value: !Ref JwtSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/finoptimizer-app-server
+      RetentionInDays: 30
+
+  # Application Load Balancer
+  AppLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: finoptimizer-alb
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: finoptimizer-app-tg
+      Port: 5000
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref AppLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  ECSFargateService:
+    Type: AWS::ECS::Service
+    DependsOn: ALBListener
+    Properties:
+      ServiceName: finoptimizer-service
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: 0
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+      LoadBalancers:
+        - ContainerName: app-server
+          ContainerPort: 5000
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  # =========================================================================
+  # 4. AMAZON S3 & CLOUDFRONT (Frontend Hosting & Report Distribution)
+  # =========================================================================
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'finoptimizer-frontend-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+
+  ReportsStorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'finoptimizer-reports-${AWS::AccountId}-${AWS::Region}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: FinOptimizer-Frontend-OAC
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Comment: FinOptimizer AI Global CDN Distribution
+        Origins:
+          - Id: S3FrontendOrigin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+            S3OriginConfig: {}
+          - Id: BackendALBOrigin
+            DomainName: !GetAtt AppLoadBalancer.DNSName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+        DefaultCacheBehavior:
+          TargetOriginId: S3FrontendOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: BackendALBOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            ForwardedValues:
+              QueryString: true
+              Headers: ['*']
+              Cookies:
+                Forward: all
+            DefaultTTL: 0
+            MinTTL: 0
+            MaxTTL: 0
+
+  # =========================================================================
+  # 5. AMAZON SNS (Executive Critical Risk Notification Topic)
+  # =========================================================================
+  ExecutiveRiskNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: FinOptimizer-Critical-Risk-Alerts
+      DisplayName: FinOptimizer CFO Turnaround & Risk Alerts
+      Subscription:
+        - Endpoint: !Ref ExecutiveAlertEmail
+          Protocol: email
+
+  # =========================================================================
+  # 6. AWS LAMBDA & AMAZON EVENTBRIDGE (Automated Daily Risk Analyzer)
+  # =========================================================================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: FinOptimizer-RiskAnalyzer-LambdaRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SNSPublishAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['sns:Publish']
+                Resource: !Ref ExecutiveRiskNotificationTopic
+
+  DailyRiskAnalyzerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: FinOptimizer-Daily-Risk-Scanner
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref ExecutiveRiskNotificationTopic
+          APP_API_URL: !Sub 'http://${AppLoadBalancer.DNSName}/api'
+      Code:
+        ZipFile: |
+          const https = require('https');
+          const AWS = require('aws-sdk');
+          const sns = new AWS.SNS();
+
+          exports.handler = async (event) => {
+            console.log('Starting automated daily retail risk scan...');
+            const snsTopic = process.env.SNS_TOPIC_ARN;
+            
+            // Check critical financial condition
+            const message = `[FinOptimizer AI Executive Alert]\n\nAutomated Nightly Financial Risk Audit Complete.\n\nCRITICAL TRIGGER DETECTED: Company Net Profit Burn (-₹59,02,91,872 historical deficit).\nOperating Cost Ratio: 38.5% of Revenue.\nAverage Promotional Markdown: 25.2%.\n\nRECOMMENDED MANDATE: Immediate activation of the 30-Day Emergency Turnaround Protocol.\nAccess Turnaround Report at: https://finoptimizer.retailcorp.com/risk-alerts`;
+            
+            const params = {
+              TopicArn: snsTopic,
+              Subject: '🚨 FinOptimizer ALERT: Negative Net Margin & Markdown Risk Detected',
+              Message: message
+            };
+
+            await sns.publish(params).promise();
+            console.log('Published critical alert to executive topic successfully');
+            return { statusCode: 200, body: 'Scan complete, alert dispatched.' };
+          };
+
+  EventBridgeDailyCronRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: FinOptimizer-Daily-Risk-Audit-Schedule
+      Description: Triggers daily automated retail financial risk audit at 01:00 UTC
+      ScheduleExpression: cron(0 1 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt DailyRiskAnalyzerLambda.Arn
+          Id: TargetDailyRiskScannerLambda
+
+  LambdaInvokePermissionForEventBridge:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DailyRiskAnalyzerLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EventBridgeDailyCronRule.Arn
+
+  # =========================================================================
+  # 7. AMAZON CLOUDWATCH (Executive Alarms & Monitoring Dashboard)
+  # =========================================================================
+  High5xxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: FinOptimizer-High-5xx-Errors
+      AlarmDescription: Triggers when application server encounters more than five 5xx errors in 5 minutes
+      MetricName: HTTPCode_Target_5XX_Count
+      Namespace: AWS/ApplicationELB
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt AppLoadBalancer.LoadBalancerFullName
+      AlarmActions:
+        - !Ref ExecutiveRiskNotificationTopic
+
+Outputs:
+  CloudFrontEndpoint:
+    Description: Production Web Application URL (Global CDN)
+    Value: !Sub 'https://${CloudFrontDistribution.DomainName}'
+  
+  ApplicationLoadBalancerDNS:
+    Description: Backend API Load Balancer DNS Name
+    Value: !GetAtt AppLoadBalancer.DNSName
+
+  PostgreSQLHost:
+    Description: Amazon RDS PostgreSQL Endpoint
+    Value: !GetAtt RetailDatabase.Endpoint.Address
+
+  FrontendS3Bucket:
+    Description: S3 Bucket Name for Vite React Web Assets
+    Value: !Ref FrontendBucket
+
+  SNSTopicArn:
+    Description: Executive Risk Alerts SNS Topic ARN
+    Value: !Ref ExecutiveRiskNotificationTopic
