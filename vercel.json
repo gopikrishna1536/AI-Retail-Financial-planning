@@ -21,16 +21,8 @@
       "destination": { "service": "application-server" }
     },
     {
-      "source": "/assets/(.*)",
-      "destination": { "service": "frontend", "path": "/assets/$1" }
-    },
-    {
-      "source": "/favicon.svg",
-      "destination": { "service": "frontend", "path": "/favicon.svg" }
-    },
-    {
       "source": "/(.*)",
-      "destination": { "service": "frontend", "path": "/index.html" }
+      "destination": { "service": "frontend" }
     }
   ]
 }
