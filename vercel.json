@@ -14,7 +14,7 @@
   },
   "functions": {
     "application-server/src/app.js": {
-      "includeFiles": "application-server/database/retail_planning_seed.sqlite.gz"
+      "includeFiles": "application-server/src/seed-data.json"
     }
   },
   "rewrites": [
