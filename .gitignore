@@ -1,1 +1,21 @@
-application-server/database/dev_retail_planning.sqlite
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Production build outputs
+dist/
+*/dist/
+
+# SQLite databases & temp files
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+application-server/database/dev_retail_planning.sqlite*
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db

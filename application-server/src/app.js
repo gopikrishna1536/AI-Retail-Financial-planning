@@ -57,6 +57,23 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
 
+// Database auto-readiness check
+const { ensureDatabaseReady } = require('./config/database');
+app.use(async (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path === '/health') {
+    try {
+      await ensureDatabaseReady();
+    } catch (dbErr) {
+      logger.error('Database initialization error:', { error: dbErr.message });
+      return res.status(503).json({
+        success: false,
+        message: `Database initialization error: ${dbErr.message}`
+      });
+    }
+  }
+  next();
+});
+
 // 3. Health check at root level
 app.get('/health', systemController.getHealth);
 
