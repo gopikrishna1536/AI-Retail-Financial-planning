@@ -12,6 +12,7 @@ dist/
 *.sqlite-wal
 application-server/database/dev_retail_planning.sqlite*
 !application-server/database/retail_planning_seed.sqlite.gz
+!application-server/src/retail_planning_seed.sqlite.gz
 
 # Logs
 *.log

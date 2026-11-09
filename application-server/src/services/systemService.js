@@ -1,10 +1,14 @@
 const axios = require('axios');
 const env = require('../config/env');
-const { checkDatabaseConnection } = require('../config/database');
+const { checkDatabaseConnection, getDatabaseDebugInfo } = require('../config/database');
 
 class SystemService {
   async getHealth() {
     const dbStatus = await checkDatabaseConnection();
+    let debugInfo = {};
+    try {
+      debugInfo = await getDatabaseDebugInfo();
+    } catch (_) {}
     return {
       status: dbStatus.connected ? 'ok' : 'degraded',
       environment: env.nodeEnv,
@@ -12,7 +16,8 @@ class SystemService {
       database: {
         connected: dbStatus.connected,
         client: dbStatus.client,
-        error: dbStatus.error
+        error: dbStatus.error,
+        ...debugInfo
       }
     };
   }
