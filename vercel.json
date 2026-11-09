@@ -21,7 +21,7 @@
       "destination": { "service": "application-server" }
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/(.*)",
       "destination": { "service": "frontend" }
     }
   ]
