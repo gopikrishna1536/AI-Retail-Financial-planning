@@ -12,6 +12,11 @@
       "framework": "vite"
     }
   },
+  "functions": {
+    "application-server/src/app.js": {
+      "includeFiles": "application-server/database/retail_planning_seed.sqlite.gz"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
