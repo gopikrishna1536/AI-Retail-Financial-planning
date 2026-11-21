@@ -1,3 +1,15 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+application-server/.env
+application-server/.env.local
+
+# Temporary files & scratch outputs
+scratch_out.txt
+response.json
+*.tmp
+
 # Dependencies
 node_modules/
 */node_modules/
@@ -17,6 +29,8 @@ application-server/database/dev_retail_planning.sqlite*
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # OS files
 .DS_Store
