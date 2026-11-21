@@ -1,0 +1,39 @@
+openapi: 3.0.3
+info:
+  title: Enterprise AI Retail Financial Planning API
+  description: High-performance microservice APIs for retail budget allocation, inventory risk simulation, and working capital optimization.
+  version: 2.1.0
+paths:
+  /api/v1/finance/working-capital:
+    get:
+      summary: Retrieve Cash Conversion Cycle (CCC) and liquidity analysis
+      parameters:
+        - name: storeId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Working capital metrics and liquidity rating
+  /api/v1/finance/vendor-discounts:
+    post:
+      summary: Evaluate 2/10 Net 30 early payment discounts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                invoiceAmount:
+                  type: number
+                discountPercent:
+                  type: number
+                discountDays:
+                  type: integer
+                netDays:
+                  type: integer
+      responses:
+        '200':
+          description: Annualized yield and early discount recommendation
